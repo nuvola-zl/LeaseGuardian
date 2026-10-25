@@ -1,0 +1,29 @@
+/* =====================================================================
+   遇见 LeaseGuardian · 全局样式 v2（蜜桃焦糖主题）
+   改动记录：
+   1. 主题色全局切换：奶油底 + 可可字 + 蜜桃链接
+   2. 删除 .auth-page / .card / .error / .success / .link
+      （已迁移至登录页、注册页的 scoped 样式，全局这份不再需要）
+   3. chat 相关样式已迁移至聊天页 scoped 样式，本文件不再保留（v3 大扫除）
+   ===================================================================== */
+
+:root {
+    color-scheme: light;
+    font-family: Inter, "PingFang SC", "Microsoft YaHei", sans-serif;
+
+    /* 遇见 · 主题色板（全站统一，页面可直接 var(--xxx) 引用） */
+    --peach: #ff9e7d;
+    --peach-deep: #f0825f;
+    --caramel: #ffc98b;
+    --cream: #fdf8f2;
+    --cocoa: #4a3f35;
+    --warm-gray: #8a7b6e;
+    --line: #f0e2d4;
+}
+
+* { box-sizing: border-box; }
+
+body { margin: 0; background: var(--cream); color: var(--cocoa); }
+
+a { color: var(--peach-deep); text-decoration: none; }
+a:hover { text-decoration: underline; text-underline-offset: 3px; }
