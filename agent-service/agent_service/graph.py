@@ -88,6 +88,15 @@ TICKET_STATUS_CN = {
     "DONE": "已完成",
     "CANCELLED": "已取消",
 }
+GREETING_WORDS = ("你好", "您好", "hi", "hello", "在吗", "在么", "嗨",
+                  "早上好", "晚上好", "中午好", "下午好")
+INTRO_TEXT = (
+    "我是寓见，你的智能租务管家～水管漏了帮你报修，要搬家帮你办退租，"
+    "押金结算算得明明白白。今天想办点什么？"
+)
+
+def _is_greeting(message: str) -> bool:
+    return len(message) <= 12 and any(w in message.lower() for w in GREETING_WORDS)
 
 
 # ============================ 基础工具 ============================
@@ -309,6 +318,9 @@ def understand_node(state: AgentState) -> dict[str, Any]:
 
     strong_repair = any(w in message for w in REPAIR_STRONG_WORDS) and not has_checkout_context(message)
     explicit_checkout_signal = any(w in message for w in EXPLICIT_CHECKOUT_WORDS)
+    if active_case is None and not has_checkout_context(message) and not explicit_checkout_signal and _is_greeting(message):
+        return {"route": "greeting"}
+
     checkout_allowed = (
             active_case is not None
             or has_checkout_context(message)
@@ -744,6 +756,9 @@ def answer_node(state: AgentState) -> dict[str, Any]:
 
     return {"answer": state["answer"]}
 
+def greeting_node(state: AgentState) -> dict[str, Any]:
+    return {"answer": INTRO_TEXT}
+
 def persona_node(state: AgentState) -> dict[str, Any]:
     """风格层：有 persona 走流式润色（逐 token 推队列），失败或无 persona 原样返回。"""
     answer = state.get("answer") or ""
@@ -774,6 +789,7 @@ def build_graph():
     graph.add_node("list_tickets_node", list_tickets_node)
     graph.add_node("answer_node", answer_node)
     graph.add_node("persona_node", persona_node)
+    graph.add_node("greeting_node", greeting_node)
     graph.add_node("repair_consult_node", repair_consult_node)
 
     graph.add_node("checkout_context_node", checkout_context_node)
@@ -797,6 +813,7 @@ def build_graph():
             "repair_consult": "repair_consult_node",
             "checkout": "identity_node",
             "chat": "chat_node",
+            "greeting": "greeting_node",
         },
     )
 
@@ -843,6 +860,7 @@ def build_graph():
     graph.add_edge("repair_consult_node", "answer_node")
     graph.add_edge("error_node", "answer_node")
     graph.add_edge("chat_node", "answer_node")
+    graph.add_edge("greeting_node", "answer_node")
     graph.add_edge("create_ticket_node", "answer_node")
     graph.add_edge("list_tickets_node", "answer_node")
 
