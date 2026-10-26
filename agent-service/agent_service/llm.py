@@ -271,13 +271,13 @@ def polish_answer(
 
 铁律（违反任何一条都算失败）：
 1. 原文中的金额、数字、日期，一字不改；
-2. 状态词不改（如 REGISTERED / ACTIVE / TERMINATED / AWAITING_CONFIRM）；
+2. 状态描述一字不改：原文里的状态文字必须原样保留，无论是中文（如"已登记，等待处理"）还是英文（如 REGISTERED），严禁中英文互转或替换；
 3. 条款号（如 CLAUSE-xxx）、工单 id、单据 id、tenant_id 不改；
 4. 错误码和错误信息不改；
 5. 不改变原文的事实含义，禁止新增原文没有的信息；
 6. 篇幅与原文接近，不要扩写。
 
-{f"【历史对话背景，仅供语气参考】{history_text}" if history_text else ""}
+{f"【以下是历史对话，仅用于理解上下文，绝不允许模仿其语气；说话风格只服从开头的设定】\n{history_text}" if history_text else ""}
 
 请用设定风格重新表达下面这段系统事实文本，只输出润色后的文本本身，不要解释、不要加引号：
 
