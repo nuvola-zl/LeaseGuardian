@@ -74,6 +74,13 @@ CANCEL_WORDS = ("取消", "不退了", "反悔", "先不退", "再想想")
 
 DATE_RE = re.compile(r"\d{4}-\d{2}-\d{2}")
 
+TICKET_STATUS_CN = {
+    "REGISTERED": "已登记，等待处理",
+    "PROCESSING": "处理中",
+    "DONE": "已完成",
+    "CANCELLED": "已取消",
+}
+
 
 # ============================ 基础工具 ============================
 
@@ -713,19 +720,17 @@ def repair_consult_node(state: AgentState) -> dict[str, Any]:
 def answer_node(state: AgentState) -> dict[str, Any]:
     if state.get("ticket"):
         ticket = state["ticket"]
+        status_cn = TICKET_STATUS_CN.get(str(ticket.get("status", "")).upper(), "已登记")
         return {
-            "answer": (
-                f"已创建报修工单：id={ticket.get('id')}，"
-                f"status={ticket.get('status')}，"
-                f"tenant_id={ticket.get('tenant_id')}"
-            )
+            "answer": f"已创建报修工单：编号 {ticket.get('id')}，当前状态：{status_cn}。"
         }
 
     if state.get("tickets") is not None:
         tickets = state["tickets"]
-        lines = [f"查到 {len(tickets)} 条工单"]
+        lines = [f"查到 {len(tickets)} 条工单："]
         for t in tickets[:5]:
-            lines.append(f"id={t.get('id')} status={t.get('status')} desc={t.get('description')}")
+            status_cn = TICKET_STATUS_CN.get(str(t.get("status", "")).upper(), "已登记")
+            lines.append(f"· 编号 {t.get('id')}：{t.get('description')}（{status_cn}）")
         return {"answer": "\n".join(lines)}
 
     return {"answer": state["answer"]}
