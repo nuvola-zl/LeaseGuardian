@@ -54,10 +54,11 @@ mvn spring-boot:run
 
 方式一：终端启动
 
-powershell
+```powershell
 cd E:\pyidea\LeaseGuardian\agent-service
 .\.venv\Scripts\Activate.ps1
 uvicorn agent_service.main:app --host 127.0.0.1 --port 8000
+```
 
 方式二：PyCharm 运行配置（点绿色三角启动）
 
@@ -190,6 +191,13 @@ http://localhost:5173
 - rerank 实装
 - 移动端完整适配
 - 生产级部署与安全加固
+
+###### 可能的小问题
+
+- **persona 可能被旧会话历史冲淡**：切换 SASSY / NORTHEAST / SWEET 后，如果继续沿用已有大量历史消息的 session，润色层可能参考历史语气，导致新风格不够明显。
+  - 前端规避：切换 persona 后自动新建会话，避免旧语气污染。
+  - 后端修复：`llm.py` 的 `polish_answer` prompt 已将历史说明改为"仅用于理解上下文，绝不允许模仿其语气；说话风格只服从开头的设定"。
+  - 状态：**已改 prompt，未完整回归测试**；需重点验证"旧会话 + 毒舌 / 东北 / 温柔"三种风格是否稳定生效。
 
 ---
 
