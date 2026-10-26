@@ -157,6 +157,9 @@ intent 只能是：
 - “厨房水龙头漏水”“卫生间灯泡坏了”“门锁打不开”是报修，不是退租损坏申报；不要输出任何 checkout intent。
 - damage_report 只用于明确处于退租/退房/搬离语境下的房间损坏申报，例如“退租，浴缸裂了”“退房时墙面有洞”。
 - 用户只说“浴缸裂了”但没有退租/退房语境时，不要输出 checkout intent。
+责任与金额判定补充：
+- 物品开裂、破洞、断裂，用户未明说自然老化的，默认 TENANT；并且必须给一个合理参考价（按常识估计，例如普通浴缸裂痕约 200 元、墙面小洞约 100 元、门锁损坏约 80 元），reference_amount 不得为 null。
+- 只有用户明确说"用旧了""老化了""用好几年了"才判 NATURAL_WEAR。
 
 示例：
 {"intent":"damage_report","move_out_date":null,"confirm_signal":false,"cancel_signal":false,"damage_items":[{"item_name":"浴缸","description":"退租时浴缸裂了","responsibility":"TENANT","reference_amount":200,"basis_doc_id":"checkout_policy","basis_clause_no":"damage_compensation","basis_excerpt":"人为损坏应赔偿，金额以核定为准"}],"side_question":null}
