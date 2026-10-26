@@ -72,7 +72,15 @@ CONFIRM_WORDS = ("确认", "好的", "好", "行", "可以", "就这样", "没�
 EXPLICIT_CHECKOUT_WORDS = ("我要退租", "申请退租", "确认退租", "取消退租", "办理退租")
 CANCEL_WORDS = ("取消", "不退了", "反悔", "先不退", "再想想")
 
-DATE_RE = re.compile(r"\d{4}-\d{2}-\d{2}")
+DATE_RE = re.compile(r"(\d{4})-(\d{1,2})-(\d{1,2})|(\d{4})年(\d{1,2})月(\d{1,2})[日号]?")
+
+def _extract_date(message: str) -> Optional[str]:
+    m = DATE_RE.search(message)
+    if not m:
+        return None
+    if m.group(1):
+        return f"{int(m.group(1)):04d}-{int(m.group(2)):02d}-{int(m.group(3)):02d}"
+    return f"{int(m.group(4)):04d}-{int(m.group(5)):02d}-{int(m.group(6)):02d}"
 
 TICKET_STATUS_CN = {
     "REGISTERED": "已登记，等待处理",
@@ -307,13 +315,14 @@ def understand_node(state: AgentState) -> dict[str, Any]:
             or explicit_checkout_signal
             or scene_checkout
     )
+
     # 第一层：LLM 抽取
     checkout_slots = extract_checkout_slots(message) if checkout_allowed else None
     if checkout_slots:
         if checkout_slots["move_out_date"] is None:
-            m = DATE_RE.search(message)
-            if m:
-                checkout_slots["move_out_date"] = m.group(0)
+            date_str = _extract_date(message)
+            if date_str:
+                checkout_slots["move_out_date"] = date_str
         return {
             "route": "checkout",
             "checkout_intent": checkout_slots["intent"],
@@ -343,9 +352,9 @@ def understand_node(state: AgentState) -> dict[str, Any]:
             return {**base, "checkout_intent": "checkout_cancel", "cancel_signal": True}
         if any(w in message for w in CONFIRM_WORDS):
             return {**base, "checkout_intent": "checkout_confirm", "confirm_signal": True}
-        m = DATE_RE.search(message)
-        if m:
-            return {**base, "checkout_intent": "checkout_apply", "move_out_date": m.group(0)}
+        date_str = _extract_date(message)
+        if date_str:
+            return {**base, "checkout_intent": "checkout_apply", "move_out_date": date_str}
         return base
 
     # 第三层：报修/查询/闲聊
@@ -573,7 +582,7 @@ def checkout_start_node(state: AgentState) -> dict[str, Any]:
     if cget(case, "moveOutDate", "move_out_date") is None:
         return {
             "termination_case": case,
-            "answer": "已开始受理退租。您打算哪天搬离？请按 YYYY-MM-DD 告诉我，例如 2026-11-30。",
+            "answer": "已开始受理退租。您打算哪天搬离？直接告诉我日期就行，比如 3 月 15 日。",
         }
 
     return {
@@ -591,7 +600,7 @@ def checkout_slot_node(state: AgentState) -> dict[str, Any]:
 
     move_out_date = state.get("move_out_date")
     if not move_out_date:
-        return {"answer": "您打算哪天搬离？请按 YYYY-MM-DD 告诉我，例如 2026-11-30。"}
+        return {"answer": "您打算哪天搬离？直接告诉我日期就行，比如 3 月 15 日。"}
 
     try:
         updated = checkout_update_move_out(tenant_id, case["id"], move_out_date)
@@ -611,7 +620,7 @@ def checkout_damage_node(state: AgentState) -> dict[str, Any]:
         return {"answer": "当前没有进行中的退租单。"}
 
     if cget(case, "moveOutDate", "move_out_date") is None:
-        return {"answer": "请先告诉我您打算哪天搬离，格式 YYYY-MM-DD。"}
+        return {"answer": "请先告诉我您打算哪天搬离，比如 3 月 15 日。"}
 
     try:
         for raw in state.get("damage_items") or []:
