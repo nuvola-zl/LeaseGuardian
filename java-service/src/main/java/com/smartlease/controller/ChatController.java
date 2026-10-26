@@ -1,6 +1,5 @@
 package com.smartlease.controller;
 
-
 import com.smartlease.common.context.BaseContext;
 import com.smartlease.common.exception.BusinessException;
 import com.smartlease.common.result.Result;
@@ -14,13 +13,17 @@ import org.springframework.web.bind.annotation.*;
 import java.util.List;
 
 @RestController
-@RequestMapping("/chat")
 @RequiredArgsConstructor
 public class ChatController {
 
     private final ChatSessionService chatSessionService;
 
-    @PostMapping("/sessions")
+    // ======================
+    // 服务间接口：/chat/**
+    // 主要给 Python 编排层用
+    // ======================
+
+    @PostMapping("/chat/sessions")
     public Result<ChatSession> createSession(
             @RequestParam Long userId,
             @RequestBody CreateChatSessionRequest req
@@ -28,7 +31,7 @@ public class ChatController {
         return Result.success(chatSessionService.create(userId, req));
     }
 
-    @GetMapping("/sessions")
+    @GetMapping("/chat/sessions")
     public Result<List<ChatSession>> listSessions(
             @RequestParam Long userId,
             @RequestParam(required = false) String scene
@@ -36,7 +39,7 @@ public class ChatController {
         return Result.success(chatSessionService.listSessions(userId, scene));
     }
 
-    @PostMapping("/sessions/{sessionId}/messages")
+    @PostMapping("/chat/sessions/{sessionId}/messages")
     public Result<ChatMessage> addMessage(
             @PathVariable Long sessionId,
             @RequestBody AddChatMessageRequest req
@@ -44,23 +47,28 @@ public class ChatController {
         return Result.success(chatSessionService.addMessage(sessionId, req));
     }
 
-    @GetMapping("/sessions/{sessionId}/messages")
+    @GetMapping("/chat/sessions/{sessionId}/messages")
     public Result<List<ChatMessage>> listMessages(@PathVariable Long sessionId) {
         return Result.success(chatSessionService.listMessages(sessionId));
     }
 
-    @GetMapping("/sessions/{sessionId}")
+    @GetMapping("/chat/sessions/{sessionId}")
     public Result<ChatSession> getSession(@PathVariable Long sessionId) {
         return Result.success(chatSessionService.getById(sessionId));
     }
 
-    @PatchMapping("/sessions/{sessionId}/state")
+    @PatchMapping("/chat/sessions/{sessionId}/state")
     public Result<ChatSession> updateSessionState(
             @PathVariable Long sessionId,
             @RequestBody UpdateChatSessionStateRequest req
     ) {
         return Result.success(chatSessionService.updateState(sessionId, req.stateJson()));
     }
+
+    // ======================
+    // 前端专用接口：/api/chat/**
+    // 命中 WebConfig 的 JWT 拦截器
+    // ======================
 
     @GetMapping("/api/chat/sessions/{sessionId}/messages")
     public Result<List<ChatMessageView>> listMessagesForFrontend(
