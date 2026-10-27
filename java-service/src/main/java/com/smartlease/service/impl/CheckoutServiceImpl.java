@@ -452,6 +452,18 @@ public class CheckoutServiceImpl implements CheckoutService {
         if (lease == null) {
             throw BusinessException.notFound(ErrorCode.LEASE_NOT_FOUND, "active lease not found or expired");
         }
+
+        // 惰性到期：读到 ACTIVE 租约但已过 end_date → 就地转 EXPIRED
+        if (LEASE_ACTIVE.equals(lease.getStatus()) && lease.getEndDate().isBefore(LocalDate.now())) {
+            leaseMapper.update(null, Wrappers.<Lease>lambdaUpdate()
+                    .eq(Lease::getId, lease.getId())
+                    .eq(Lease::getStatus, LEASE_ACTIVE)
+                    .set(Lease::getStatus, "EXPIRED")
+                    .set(Lease::getUpdatedAt, LocalDateTime.now())
+            );
+            throw BusinessException.notFound(ErrorCode.LEASE_NOT_FOUND, "lease expired");
+        }
+
         if (LEASE_TERMINATING.equals(lease.getStatus())) {
             throw BusinessException.conflict(ErrorCode.LEASE_STATUS_INVALID, "lease already terminating");
         }
