@@ -555,7 +555,7 @@ def checkout_consult_node(state: AgentState) -> dict[str, Any]:
     elif "取消" in message or "不退" in message:
         query = "确认前 免费取消 反悔"
     else:
-        query = "退租 流程 搬离日 结算 确认"
+        query = message  # 无法归类的问题直接用原话检索，让向量去找
 
     hits = retrieve_checkout_clauses(query, top_k=1)
     if hits:
