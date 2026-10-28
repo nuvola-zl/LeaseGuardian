@@ -46,7 +46,7 @@ function setPersona(key: PersonaKey) {
 /* ★ 语气小胶囊（下拉弹出） */
 const personaOpen = ref(false)
 const currentPersona = computed(() =>
-    personaOptions.find(p => p.key === persona.value) || personaOptions[0],
+    personaOptions.find(p => p.key === persona.value) || personaOptions[0]!,
 )
 function pickPersona(p: { key: PersonaKey; label: string; emoji: string }) {
   setPersona(p.key)
@@ -78,7 +78,7 @@ const QUICK: Record<string, string[]> = {
   lease: ['我想办理退租', '这个月账单是多少', '租约什么时候到期', '押金怎么退'],
   default: ['我想报修', '租约有疑问', '这个月账单', '找人工客服'],
 }
-const quickQuestions = computed<string[]>(() => QUICK[scene.value || ''] || QUICK.default)
+const quickQuestions = computed<string[]>(() => QUICK[scene.value || ''] || QUICK.default!)
 function quickSend(text: string) {
   if (sending.value) return
   input.value = text
@@ -291,7 +291,7 @@ async function refreshSessions() {
     }
 
     if (list.length) {
-      await selectSession(list[0].session_id)
+      await selectSession(list[0]!.session_id)
       return
     }
 

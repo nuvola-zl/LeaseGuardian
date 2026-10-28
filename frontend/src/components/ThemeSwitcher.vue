@@ -8,7 +8,7 @@ import { computed } from 'vue'
 import { useTheme } from '@/composables/useTheme'
 
 const { current, setTheme, themes } = useTheme()
-const activeTheme = computed(() => themes.find(t => t.key === current.value) || themes[1])
+const activeTheme = computed(() => themes.find(t => t.key === current.value) || themes[1]!)
 </script>
 
 <template>

@@ -1,14 +1,21 @@
 <!-- src/components/AppToast.vue
-     用法：在 App.vue 里挂一次 <AppToast />，之后任何页面 useToast().success('搞定啦 🍑') -->
+     用法：在 App.vue 里挂一次 <AppToast />，之后任何页面 useToast().success('搞定啦')
+     v2：颜色全部走 --success / --error / --info 语义变量，三主题自动跟肤；
+     图标与入场动效按主题分性格（蜜桃奶油弹一下，燕麦拿铁安静淡入）。 -->
 <script setup lang="ts">
-import { useToast } from '@/composables/useToast.ts'
-const { items } = useToast()
+import { computed } from 'vue'
+import { useToast } from '@/composables/useToast'
+import { useTheme } from '@/composables/useTheme'
 
-const ICONS: Record<string, string> = {
-  success: '🍑',
-  error: '😢',
-  info: '💡',
-}
+const { items } = useToast()
+const { current } = useTheme()
+
+/* 每个主题的提示图标：蜜桃奶油用桃子，薄荷森林用新芽，燕麦拿铁用极简符号 */
+const ICONS = computed<Record<string, string>>(() => {
+  if (current.value === 'cute') return { success: '🍑', error: '😢', info: '💡' }
+  if (current.value === 'simple') return { success: '✓', error: '✕', info: 'i' }
+  return { success: '🌱', error: '😢', info: '💡' }
+})
 </script>
 
 <template>
@@ -39,7 +46,7 @@ const ICONS: Record<string, string> = {
   pointer-events: none;   /* 只负责打招呼，不抢鼠标 */
 }
 
-/* 胶囊本体 */
+/* 胶囊本体：基础面用主题变量 */
 .toast {
   display: flex;
   align-items: center;
@@ -49,19 +56,35 @@ const ICONS: Record<string, string> = {
   border-radius: 999px;
   font-size: 14px;
   line-height: 1.5;
-  background: #fff;
-  border: 1px solid var(--line, #f0e2d4);
-  box-shadow: 0 10px 30px rgba(74, 63, 53, .12);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  color: var(--text);
+  box-shadow: var(--shadow-card);
 }
 
-/* 三种表情：成功抹茶 / 失败珊瑚 / 提示焦糖 */
-.toast.success { color: #6e8f4e; background: #f3f8ec; border-color: #dcebc8; }
-.toast.error   { color: #e07a5f; background: #fdf0eb; border-color: #f8d8cb; }
-.toast.info    { color: #a06a1f; background: #fff6e8; border-color: #f5e3c2; }
+/* 三种语义色：全部来自主题 token，切主题自动换装 */
+.toast.success { color: var(--success);        background: var(--success-bg);        border-color: var(--success-border); }
+.toast.error   { color: var(--error);          background: var(--error-bg);          border-color: var(--error-border); }
+.toast.info    { color: var(--info);           background: var(--info-bg);           border-color: var(--info-border); }
 
-/* 轻轻的滑入滑出 */
+/* 蜜桃奶油：弹一下再停住（软糖落地） */
+[data-theme="cute"] .toast { animation: pop .35s cubic-bezier(.34, 1.56, .64, 1); }
+@keyframes pop {
+  from { opacity: 0; transform: translateY(-12px) scale(.92); }
+  to   { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+/* 燕麦拿铁：安静地淡入，不弹 */
+[data-theme="simple"] .toast { animation: fade .25s ease; }
+@keyframes fade { from { opacity: 0; } to { opacity: 1; } }
+
+/* 滑入滑出 */
 .toast-enter-active, .toast-leave-active { transition: all .3s ease; }
 .toast-enter-from { opacity: 0; transform: translateY(-14px); }
 .toast-leave-to   { opacity: 0; transform: translateY(-8px); }
 .toast-move { transition: transform .3s ease; }
+
+@media (prefers-reduced-motion: reduce) {
+  .toast, .toast-enter-active, .toast-leave-active { animation: none; transition: none; }
+}
 </style>
