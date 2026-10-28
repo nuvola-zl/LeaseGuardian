@@ -1,6 +1,7 @@
 import re
 from typing import Any, Optional, TypedDict
-
+from .llm import rewrite_query
+import datetime
 from langgraph.graph import END, START, StateGraph
 from .rag.repair_rag import retrieve_repair_clauses
 from .llm import chat_once, extract_checkout_slots, extract_slots, polish_answer
@@ -68,6 +69,17 @@ CHECKOUT_CONTEXT_WORDS = (
 
 REPAIR_STRONG_WORDS = ("水龙头", "漏水", "灯泡", "门锁", "空调", "马桶", "下水道", "热水器")
 
+POLICY_CONSULT_WORDS = (
+    "能不能", "可以吗", "怎么", "如何", "怎样", "规定", "禁止", "要求",
+    "安全吗", "允许", "怎么办", "在哪", "哪里",
+)
+
+
+def is_policy_consult(message: str) -> bool:
+    """通用条款咨询：报修/退租入口共用，按 scene 分流到对应知识问答。"""
+    return any(w in message for w in POLICY_CONSULT_WORDS) \
+        and not any(w in message for w in REPAIR_STRONG_WORDS)
+
 CONFIRM_WORDS = ("确认", "好的", "好", "行", "可以", "就这样", "没问题")
 EXPLICIT_CHECKOUT_WORDS = ("我要退租", "申请退租", "确认退租", "取消退租", "办理退租")
 CANCEL_WORDS = ("取消", "不退了", "反悔", "先不退", "再想想")
@@ -81,6 +93,43 @@ def _extract_date(message: str) -> Optional[str]:
     if m.group(1):
         return f"{int(m.group(1)):04d}-{int(m.group(2)):02d}-{int(m.group(3)):02d}"
     return f"{int(m.group(4)):04d}-{int(m.group(5)):02d}-{int(m.group(6)):02d}"
+
+def _infer_fuzzy_date(message: str, today: Optional[datetime.date] = None) -> Optional[str]:
+    """模糊日期推断：取'最近的未来'。识别不了返回 None，走原追问逻辑。"""
+    today = today or datetime.date.today()
+    text = message.strip()
+
+    m3 = re.search(r"(\d{4})年(\d{1,2})月(\d{1,2})[日号]?", text)
+    if m3:
+        return f"{int(m3.group(1)):04d}-{int(m3.group(2)):02d}-{int(m3.group(3)):02d}"
+
+    m2 = re.search(r"(\d{1,2})月(\d{1,2})[日号]?", text)
+    if m2:
+        mo, d = int(m2.group(1)), int(m2.group(2))
+        try:
+            cand = datetime.date(today.year, mo, d)
+            if cand <= today:
+                cand = datetime.date(today.year + 1, mo, d)
+            return cand.isoformat()
+        except ValueError:
+            return None
+
+    m1 = re.search(r"(\d{1,2})[日号]", text)
+    if m1:
+        d = int(m1.group(1))
+        try:
+            cand = datetime.date(today.year, today.month, d)
+            if cand <= today:
+                mo = today.month + 1
+                y = today.year
+                if mo == 13:
+                    y, mo = y + 1, 1
+                cand = datetime.date(y, mo, d)
+            return cand.isoformat()
+        except ValueError:
+            return None
+
+    return None
 
 TICKET_STATUS_CN = {
     "REGISTERED": "已登记，等待处理",
@@ -315,6 +364,12 @@ def understand_node(state: AgentState) -> dict[str, Any]:
     # 报修政策/价格咨询：不进 identity，不需要登录
     if is_repair_consult(message):
         return {"route": "repair_consult"}
+    # 报修政策/价格咨询：不进 identity，不需要登录
+    # 通用条款咨询兜底（两个入口共用）：能不能/怎么/规定/禁止类 → 知识问答
+    if is_policy_consult(message):
+        if scene_checkout:
+            return {"route": "checkout_consult"}
+        return {"route": "repair_consult"}
 
     strong_repair = any(w in message for w in REPAIR_STRONG_WORDS) and not has_checkout_context(message)
     explicit_checkout_signal = any(w in message for w in EXPLICIT_CHECKOUT_WORDS)
@@ -331,8 +386,8 @@ def understand_node(state: AgentState) -> dict[str, Any]:
     # 第一层：LLM 抽取
     checkout_slots = extract_checkout_slots(message) if checkout_allowed else None
     if checkout_slots:
-        if checkout_slots["move_out_date"] is None:
-            date_str = _extract_date(message)
+        if checkout_slots["move_out_date"] is None and len(message) <= 10:
+            date_str = _extract_date(message) or _infer_fuzzy_date(message)
             if date_str:
                 checkout_slots["move_out_date"] = date_str
         return {
@@ -544,23 +599,13 @@ def checkout_consult_node(state: AgentState) -> dict[str, Any]:
     message = state.get("message") or ""
     case = state.get("termination_case")
 
-    if "水电" in message:
-        query = "水电 欠费 结算 扣减"
-    elif "押金" in message:
-        query = "押金 退还 扣除"
-    elif "损坏" in message or "赔偿" in message:
-        query = "人为损坏 自然老化 赔偿 责任"
-    elif "到期" in message:
-        query = "到期 未退 EXPIRED"
-    elif "取消" in message or "不退" in message:
-        query = "确认前 免费取消 反悔"
-    else:
-        query = message  # 无法归类的问题直接用原话检索，让向量去找
-
+    query = rewrite_query(message)   # 规则法退役，LLM 改写上岗
     hits = retrieve_checkout_clauses(query, top_k=1)
-    if hits:
+    rs = hits[0].get("rerank_score")
+    if hits and (rs is None or rs >= 0.3):  # 有 rerank 分且够高才答；降级维持原行为
         h = hits[0]
-        excerpt = h["text"].splitlines()[1].strip() if len(h["text"].splitlines()) > 1 else h["text"][:80]
+        lines = [ln.strip() for ln in h["text"].splitlines() if ln.strip()]
+        excerpt = next((ln for ln in lines if not ln.startswith("#")), h["text"][:80])
         body = f"{h['title']}：{excerpt}（依据 {h['doc_id']} {h['clause_no']}）"
     else:
         body = "退租流程是：发起退租、确认搬离日、登记损坏、出具结算明细，最后由您确认；确认前可免费取消。"
@@ -710,24 +755,16 @@ def checkout_cancel_node(state: AgentState) -> dict[str, Any]:
         return {"answer": _map_java_error(exc)}
 
 def repair_consult_node(state: AgentState) -> dict[str, Any]:
+    _emit_progress(state, "processing")
     message = state.get("message") or ""
 
-    if any(w in message for w in ("责任", "谁承担", "谁出钱", "自然老化", "人为损坏")):
-        query = "人为损坏 自然老化 维修责任"
-    elif "水龙头" in message:
-        query = "水龙头维修参考价"
-    elif "浴缸" in message:
-        query = "浴缸维修参考价"
-    elif any(w in message for w in ("多少钱", "费用", "参考价", "价格")):
-        query = "维修 参考价 费用"
-    else:
-        query = "维修 责任 参考价"
-
+    query = rewrite_query(message)   # 关键词构造退役，LLM 改写上岗
     hits = retrieve_repair_clauses(query, top_k=1)
-    if hits:
+    rs = hits[0].get("rerank_score")
+    if hits and (rs is None or rs >= 0.3):  # 有 rerank 分且够高才答；降级维持原行为
         h = hits[0]
         lines = [ln.strip() for ln in h["text"].splitlines() if ln.strip()]
-        excerpt = lines[1] if len(lines) > 1 else h["text"][:80]
+        excerpt = next((ln for ln in lines if not ln.startswith("#")), h["text"][:80])
         answer = f"{h['title']}：{excerpt}（依据 {h['doc_id']} {h['clause_no']}）"
     else:
         answer = "我暂时没查到对应维修条款；如果你要报修，可以直接描述具体问题。"

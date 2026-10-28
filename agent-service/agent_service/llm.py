@@ -330,3 +330,22 @@ def summarize_history(existing_summary: str, batch_text: str) -> str:
         return (resp.choices[0].message.content or "").strip() or existing_summary
     except Exception:
         return existing_summary
+
+
+def rewrite_query(user_message: str) -> str:
+    """查询改写：口语问题 → 检索友好查询词。失败/未配置时原样返回。"""
+    prompt = (
+        "你是检索查询改写器。把用户的口语问题改写成适合检索的查询词："
+        "保留核心实体（如宠物、押金、水电），补充 2~4 个相关术语"
+        "（如 收费、规定、管理费、条款）。只输出改写后的查询词，不要解释。\n\n"
+        f"用户问题：{user_message}"
+    )
+    try:
+        resp = _client.chat.completions.create(
+            model=settings.openai_model_persona,
+            messages=[{"role": "user", "content": prompt}],
+            temperature=0,
+        )
+        return (resp.choices[0].message.content or "").strip() or user_message
+    except Exception:
+        return user_message
