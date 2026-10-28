@@ -22,6 +22,12 @@ const router = createRouter({
       component: () => import('@/views/Chat.vue'),
       meta: { auth: true, scene: 'CHECKOUT', title: '租约 / 退租 / 结算' },
     },
+    {
+      path: '/admin',
+      name: 'admin',
+      component: () => import('@/views/AdminRag.vue'),
+      meta: { auth: true, title: '知识库管理' },
+    },
 
     { path: '/chat', redirect: '/home' },
   ],

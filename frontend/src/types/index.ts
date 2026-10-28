@@ -46,3 +46,4 @@ export interface ChatSession {
   created_at: string
   updated_at: string
 }
+
