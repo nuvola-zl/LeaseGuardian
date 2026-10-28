@@ -276,6 +276,7 @@ def polish_answer(
 4. 错误码和错误信息不改；
 5. 不改变原文的事实含义，禁止新增原文没有的信息；
 6. 篇幅与原文接近，不要扩写。
+7. 引用条款时，条款中的关键数字、金额、条件必须完整保留并念出，禁止用"按规定""按条款"等说法代替具体内容；
 
 {f"【以下是历史对话，仅用于理解上下文，绝不允许模仿其语气；说话风格只服从开头的设定】\n{history_text}" if history_text else ""}
 
@@ -309,3 +310,23 @@ def polish_answer(
         return content or fact_text
     except Exception:
         return fact_text
+
+
+def summarize_history(existing_summary: str, batch_text: str) -> str:
+    """把一批老对话合并进已有摘要。失败时返回原文截断，绝不抛异常。"""
+    prompt = (
+        "你是对话摘要器。请把【本轮老对话】的内容合并进【已有摘要】，"
+        "输出更新后的简洁摘要，必须保留：用户诉求、已办理的业务及关键数字、待办事项。"
+        "不超过 200 字，只输出摘要文本本身。\n\n"
+        f"【已有摘要】\n{existing_summary}\n\n"
+        f"【本轮老对话】\n{batch_text}"
+    )
+    try:
+        resp = _client.chat.completions.create(
+            model=settings.openai_model_persona,
+            messages=[{"role": "user", "content": prompt}],
+            temperature=0,
+        )
+        return (resp.choices[0].message.content or "").strip() or existing_summary
+    except Exception:
+        return existing_summary

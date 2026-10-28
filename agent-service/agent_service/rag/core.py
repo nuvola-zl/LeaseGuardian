@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 import re
+import requests
 from typing import Any, Optional
 
 import chromadb
@@ -70,10 +71,16 @@ def _load_domain_docs(domain: str) -> list[dict[str, Any]]:
     return docs
 
 
-def _bm25_top(query: str, domain: str, top_k: int) -> list[dict[str, Any]]:
-    if domain not in _BM25_CACHE:
-        _load_domain_docs(domain)
-    index, docs = _BM25_CACHE[domain]
+def _bm25_top(query: str, domains: list[str], top_k: int) -> list[dict[str, Any]]:
+    key = "|".join(sorted(domains))
+    if key not in _BM25_CACHE:
+        docs: list[dict[str, Any]] = []
+        for d in domains:
+            docs.extend(_load_domain_docs(d))
+        index = BM25Okapi([list(x["text"]) for x in docs]) if docs else None
+        _BM25_CACHE[key] = (index, docs)
+
+    index, docs = _BM25_CACHE[key]
     if index is None or not docs:
         return []
 
@@ -85,12 +92,12 @@ def _bm25_top(query: str, domain: str, top_k: int) -> list[dict[str, Any]]:
     ]
 
 
-def _vector_top(query: str, domain: str, top_k: int) -> list[dict[str, Any]]:
+def _vector_top(query: str, domains: list[str], top_k: int) -> list[dict[str, Any]]:
     col = _get_collection()
     result = col.query(
         query_embeddings=[_embed(query)],
         n_results=top_k,
-        where={"domain": domain},
+        where={"domain": {"$in": list(domains)}},
     )
 
     items = []
@@ -129,20 +136,42 @@ def _rrf_fuse(lists: list[list[dict[str, Any]]], k: int = 60) -> list[dict[str, 
 
 def _rerank(query: str, candidates: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """
-    预留 rerank。
-    当前恒等；以后接 bge-reranker 只改这里。
+    RRF 候选交给阿里 gte-rerank-v2 精排。
+    API 失败/未开通时静默降级为 RRF 原顺序——检索永远有兜底。
     """
-    return candidates
+    if not candidates:
+        return candidates
+    try:
+        resp = requests.post(
+            "https://dashscope.aliyuncs.com/api/v1/services/rerank/text-rerank/text-rerank",
+            headers={"Authorization": f"Bearer {settings.openai_api_key}"},
+            json={
+                "model": "gte-rerank-v2",
+                "input": {
+                    "query": query,
+                    "documents": [c["text"] for c in candidates],
+                },
+                "parameters": {"top_n": len(candidates), "return_documents": False},
+            },
+            timeout=10,
+        )
+        results = resp.json()["output"]["results"]  # [{index, relevance_score}, ...]
+        ranked = sorted(results, key=lambda r: r["relevance_score"], reverse=True)
+        return [candidates[r["index"]] for r in ranked]
+    except Exception:
+        return candidates
 
 
 def retrieve_clauses(query: str, domain: str, top_k: int = 2,
-                     score_threshold: Optional[float] = None) -> list[dict[str, Any]]:
+                     score_threshold: Optional[float] = None,
+                     extra_domains: Optional[list[str]] = None) -> list[dict[str, Any]]:
     """
     统一检索入口：所有业务域共用。
-    domain 例：repair / checkout
+    domain 例：repair / checkout；extra_domains 例：["custom"]（用户上传的补充文档）
     """
-    bm25_hits = _bm25_top(query, domain=domain, top_k=top_k * 2)
-    vec_hits = _vector_top(query, domain=domain, top_k=top_k * 2)
+    domains = [domain] + list(extra_domains or [])
+    bm25_hits = _bm25_top(query, domains=domains, top_k=top_k * 2)
+    vec_hits = _vector_top(query, domains=domains, top_k=top_k * 2)
     fused = _rrf_fuse([bm25_hits, vec_hits])[:top_k]
     ranked = _rerank(query, fused)
     if score_threshold is not None:
@@ -180,6 +209,20 @@ def replace_domain_documents(domain: str, docs: list[dict[str, Any]]) -> None:
         documents=documents,
         metadatas=metadatas,
         embeddings=embeddings,
+    )
+    invalidate_domain_cache(domain)
+
+
+def add_documents(domain: str, docs: list[dict[str, Any]]) -> None:
+    """向 domain 追加文档（不清空原有内容）；重复上传同 id 自动覆盖。"""
+    if not docs:
+        return
+    col = _get_collection()
+    col.upsert(
+        ids=[d["id"] for d in docs],
+        documents=[d["text"] for d in docs],
+        metadatas=[d["metadata"] for d in docs],
+        embeddings=[_embed(d["text"]) for d in docs],
     )
     invalidate_domain_cache(domain)
 

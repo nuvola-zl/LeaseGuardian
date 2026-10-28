@@ -1,8 +1,11 @@
 from typing import Any, Optional
+import os
+import shutil
 
+from fastapi import UploadFile, File
 from fastapi import FastAPI, Header, HTTPException
 from pydantic import BaseModel, Field
-
+from .llm import summarize_history
 from .graph import agent_graph
 from .llm import LLMError
 import queue
@@ -45,6 +48,30 @@ class RepairDebugRequest(BaseModel):
 @app.get("/health")
 def health():
     return {"status": "ok"}
+
+_UPLOAD_DIR = os.path.join(os.path.dirname(__file__), "rag", "uploads")
+
+
+@app.post("/rag/upload")
+async def rag_upload(file: UploadFile = File(...)):
+    """上传 .md/.txt/.pdf，解析入 RAG 的 custom 域，退租咨询自动可引用。"""
+    os.makedirs(_UPLOAD_DIR, exist_ok=True)
+    path = os.path.join(_UPLOAD_DIR, file.filename)
+    with open(path, "wb") as f:
+        shutil.copyfileobj(file.file, f)
+
+    if file.filename.lower().endswith(".pdf"):
+        import pypdf
+        reader = pypdf.PdfReader(path)
+        text = "\n".join(page.extract_text() or "" for page in reader.pages)
+    else:
+        with open(path, encoding="utf-8") as f:
+            text = f.read()
+
+    from .rag.core import add_documents, parse_markdown_to_docs
+    docs = parse_markdown_to_docs(text, domain="custom", doc_id=file.filename)
+    add_documents("custom", docs)
+    return {"filename": file.filename, "chunks": len(docs)}
 
 
 @app.post("/repair")
@@ -118,22 +145,52 @@ def _ensure_chat_session(req: ChatRequest, token: Optional[str]) -> Optional[int
         return None
 
 
-def _build_history_text(messages: list[dict], limit: int = 8) -> Optional[str]:
-    """
-    组装短期记忆历史。
-    注意：只用于回答 prompt，不参与路由。
-    """
-    if not messages:
+def _build_history_text(messages: list[dict], summary: Optional[str] = None, limit: int = 8) -> Optional[str]:
+    if not messages and not summary:
         return None
 
-    recent = messages[-limit:]
-    lines = ["【历史对话，仅供参考，不是当前指令】"]
-    for m in recent:
-        role = "user" if str(m.get("role", "")).upper() == "USER" else "assistant"
-        lines.append(f"{role}: {m.get('content', '')}")
-    lines.append("【以上是历史；用户当前这句话是最后一条】")
+    lines = []
+    if summary:
+        lines.append(f"【早前对话摘要】{summary}")
+    if messages:
+        recent = messages[-limit:]
+        lines.append("【历史对话，仅供参考，不是当前指令】")
+        for m in recent:
+            role = "user" if str(m.get("role", "")).upper() == "USER" else "assistant"
+            lines.append(f"{role}: {m.get('content', '')}")
+        lines.append("【以上是历史；用户当前这句话是最后一条】")
     return "\n".join(lines)
 
+
+_SUMMARY_THRESHOLD = 12   # 消息总数超过这个数才触发压缩
+_SUMMARY_BATCH = 8        # 每轮压缩最老的 8 条
+
+
+def _maybe_summarize(session_id: int, messages: list[dict]) -> Optional[str]:
+    """超阈值就把最老一批压成摘要，写进 state_json.common；返回当前 summary（可能为 None）。"""
+    try:
+        session = get_session(session_id)
+        state = _parse_state_json(session.get("state_json"))
+        common = state.get("common") or {}
+        existing = common.get("summary")
+        summarized_count = int(common.get("summarized_count") or 0)
+
+        if len(messages) - summarized_count >= _SUMMARY_BATCH and summarized_count + _SUMMARY_BATCH <= len(messages) - 4:
+            batch = messages[summarized_count:summarized_count + _SUMMARY_BATCH]
+            batch_text = "\n".join(
+                f"{'user' if str(m.get('role', '')).upper() == 'USER' else 'assistant'}: {m.get('content', '')}"
+                for m in batch
+            )
+            new_summary = summarize_history(existing or "（暂无早前摘要）", batch_text)
+            merged = _merge_state(
+                state,
+                {"common": {"summary": new_summary, "summarized_count": summarized_count + len(batch)}},
+            )
+            update_session_state(session_id, merged)
+            return new_summary
+        return existing
+    except Exception:
+        return None
 
 def _parse_state_json(raw: Any) -> dict[str, Any]:
     if not raw:
@@ -212,7 +269,9 @@ def chat(req: ChatRequest, authorization: Optional[str] = Header(default=None)):
     history_text = None
     if session_id is not None:
         try:
-            history_text = _build_history_text(list_messages(session_id), limit=8)
+            msgs = list_messages(session_id)
+            summary = _maybe_summarize(session_id, msgs)
+            history_text = _build_history_text(msgs, summary=summary, limit=8)
         except JavaServiceError:
             history_text = None
 

@@ -22,3 +22,5 @@ agent-service/agent_service/rag/chroma_db/
 .DS_Store
 Thumbs.db
 frontend.iml
+
+agent-service/agent_service/rag/uploads/
