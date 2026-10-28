@@ -11,6 +11,8 @@ from .llm import LLMError
 import queue
 import threading
 import re
+from pathlib import PurePosixPath as _PurePosixPath
+from .rag.core import delete_documents_by_doc as _delete_documents_by_doc
 
 from fastapi.responses import StreamingResponse
 from .tools.identity_tool import get_current_user
@@ -54,13 +56,21 @@ _UPLOAD_DIR = os.path.join(os.path.dirname(__file__), "rag", "uploads")
 
 @app.post("/rag/upload")
 async def rag_upload(file: UploadFile = File(...)):
-    """上传 .md/.txt/.pdf，解析入 RAG 的 custom 域，退租咨询自动可引用。"""
+    """上传 .md/.txt/.pdf；同名文件整文件替换，避免旧条款残留。"""
+    from pathlib import PurePosixPath
+    from .rag.core import add_documents, delete_documents_by_doc, parse_markdown_to_docs
+
+    safe_name = PurePosixPath(file.filename or "").name
+    if not safe_name or safe_name != file.filename or ".." in safe_name:
+        raise HTTPException(status_code=400, detail="非法文件名")
+
     os.makedirs(_UPLOAD_DIR, exist_ok=True)
-    path = os.path.join(_UPLOAD_DIR, file.filename)
+    path = os.path.join(_UPLOAD_DIR, safe_name)
+
     with open(path, "wb") as f:
         shutil.copyfileobj(file.file, f)
 
-    if file.filename.lower().endswith(".pdf"):
+    if safe_name.lower().endswith(".pdf"):
         import pypdf
         reader = pypdf.PdfReader(path)
         text = "\n".join(page.extract_text() or "" for page in reader.pages)
@@ -68,10 +78,12 @@ async def rag_upload(file: UploadFile = File(...)):
         with open(path, encoding="utf-8") as f:
             text = f.read()
 
-    from .rag.core import add_documents, parse_markdown_to_docs
-    docs = parse_markdown_to_docs(text, domain="custom", doc_id=file.filename)
+    # 整文件替换：先删旧向量，再插新向量
+    delete_documents_by_doc("custom", safe_name)
+    docs = parse_markdown_to_docs(text, domain="custom", doc_id=safe_name)
     add_documents("custom", docs)
-    return {"filename": file.filename, "chunks": len(docs)}
+
+    return {"filename": safe_name, "chunks": len(docs)}
 
 
 @app.post("/repair")
@@ -264,7 +276,16 @@ def chat(req: ChatRequest, authorization: Optional[str] = Header(default=None)):
         token = authorization.split(None, 1)[1]
 
     session_id = _ensure_chat_session(req, token)
-    scene = _normalize_scene(req.scene)
+
+    # scene 兜底：请求没带时，从会话里读（防前端只在新会话时传）
+    scene_req = req.scene
+    if not scene_req and session_id is not None:
+        try:
+            scene_req = get_session(session_id).get("scene")
+        except Exception:
+            scene_req = None
+
+    scene = _normalize_scene(scene_req)
 
     history_text = None
     if session_id is not None:
@@ -373,3 +394,26 @@ def chat(req: ChatRequest, authorization: Optional[str] = Header(default=None)):
         )
 
     return StreamingResponse(sse(), media_type="text/event-stream")
+
+
+def _safe_upload_name(filename: str) -> str:
+    name = _PurePosixPath(filename).name
+    if not name or name != filename or ".." in name:
+        raise HTTPException(status_code=400, detail="非法文件名")
+    return name
+
+
+@app.get("/rag/files")
+def rag_files():
+    os.makedirs(_UPLOAD_DIR, exist_ok=True)
+    return [{"filename": n} for n in sorted(os.listdir(_UPLOAD_DIR))]
+
+
+@app.delete("/rag/files/{filename}")
+def rag_delete_file(filename: str):
+    safe = _safe_upload_name(filename)
+    path = os.path.join(_UPLOAD_DIR, safe)
+    if os.path.exists(path):
+        os.remove(path)
+    _delete_documents_by_doc("custom", safe)
+    return {"deleted": safe}

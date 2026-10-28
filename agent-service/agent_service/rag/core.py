@@ -136,8 +136,8 @@ def _rrf_fuse(lists: list[list[dict[str, Any]]], k: int = 60) -> list[dict[str, 
 
 def _rerank(query: str, candidates: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """
-    RRF 候选交给阿里 gte-rerank-v2 精排。
-    API 失败/未开通时静默降级为 RRF 原顺序——检索永远有兜底。
+    RRF 候选交给阿里 gte-rerank-v2 精排，并把相关性分数写回候选（rerank_score）。
+    API 失败/未开通时静默降级为 RRF 原顺序（无 rerank_score）——检索永远有兜底。
     """
     if not candidates:
         return candidates
@@ -157,10 +157,14 @@ def _rerank(query: str, candidates: list[dict[str, Any]]) -> list[dict[str, Any]
         )
         results = resp.json()["output"]["results"]  # [{index, relevance_score}, ...]
         ranked = sorted(results, key=lambda r: r["relevance_score"], reverse=True)
-        return [candidates[r["index"]] for r in ranked]
+        out = []
+        for r in ranked:
+            c = dict(candidates[r["index"]])   # 拷贝，避免改到 RRF 缓存里的原对象
+            c["rerank_score"] = r["relevance_score"]
+            out.append(c)
+        return out
     except Exception:
         return candidates
-
 
 def retrieve_clauses(query: str, domain: str, top_k: int = 2,
                      score_threshold: Optional[float] = None,
@@ -286,3 +290,15 @@ def parse_markdown_to_docs(markdown: str, domain: str, doc_id: str) -> list[dict
         })
 
     return docs
+
+
+def delete_documents_by_doc(domain: str, doc_id: str) -> None:
+    """按 doc_id 删除某域下的文档块，用于管理端删除/覆盖上传。"""
+    col = _get_collection()
+    col.delete(where={
+        "$and": [
+            {"domain": domain},
+            {"doc_id": doc_id},
+        ]
+    })
+    invalidate_domain_cache()

@@ -8,7 +8,7 @@ from .core import (
 
 
 def retrieve_repair_clauses(query: str, top_k: int = 2) -> list[dict[str, Any]]:
-    return retrieve_clauses(query, domain="repair", top_k=top_k)
+    return retrieve_clauses(query, domain="repair", top_k=top_k, extra_domains=["custom"])
 
 
 def retrieve_first_repair_clause(query: str) -> Optional[dict[str, Any]]:
