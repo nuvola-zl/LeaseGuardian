@@ -1,0 +1,77 @@
+/* =====================================================================
+   寓见 · 三主题 token 定义（themes.css）
+   用法：在 main.css 里 @import './themes.css';
+   切换：document.documentElement 上的 data-theme 属性（cute / nature / simple）
+   注意：:root 里写的就是默认主题（薄荷森林），JS 加载前也不闪。
+   ===================================================================== */
+
+:root {
+    /* ===== 默认主题：🌿 薄荷森林（nature，大众款）===== */
+    --bg: #f5f8f1;                 /* 薄荷叶米白 */
+    --surface: #ffffff;
+    --text: #3e4a38;               /* 深苔绿文字 */
+    --text-secondary: #7d8a74;
+    --text-tertiary: #aeb9a4;
+    --border: #e3ecda;
+    --primary: #7fa36c;            /* 鼠尾草绿 */
+    --primary-deep: #54724a;       /* 深苔绿 */
+    --primary-tint: #edf3e4;
+    --grad-primary: linear-gradient(135deg, #6f9460, #54724a);
+    --on-primary: #ffffff;         /* 主按钮上的文字色 */
+    --shadow-card: 0 10px 30px rgba(127, 163, 108, .14);
+    --shadow-btn: 0 8px 18px rgba(127, 163, 108, .30);
+    --radius-card: 16px;
+    --radius-pill: 999px;
+
+    /* 语义色（AppToast 等组件用） */
+    --success: #6e8f4e;        --success-bg: #f3f8ec;  --success-border: #dcebc8;
+    --error: #e07a5f;          --error-bg: #fdf0eb;    --error-border: #f8d8cb;
+    --info: #a06a1f;           --info-bg: #fff6e8;     --info-border: #f5e3c2;
+
+    /* 装饰 / 元信息 */
+    --font-display: inherit;       /* 标题字体栈，cute 主题会覆盖成圆体 */
+    --theme-color: #f5f8f1;        /* 同步给 <meta name="theme-color"> */
+}
+
+/* ===== 🍑 蜜桃奶油（cute，超级可爱档）===== */
+[data-theme="cute"] {
+    --bg: #fff6f1;
+    --surface: #ffffff;
+    --text: #5a3d47;               /* 可可粉棕 */
+    --text-secondary: #a07683;
+    --text-tertiary: #c9a8b2;
+    --border: #ffe3d9;
+    --primary: #ff9eb5;            /* 蜜桃粉 */
+    --primary-deep: #e56b87;
+    --primary-tint: #ffe9ef;
+    --grad-primary: linear-gradient(135deg, #ffc2d1, #ffd9e2);
+    --on-primary: #7c3149;         /* 浅粉底上的深莓字，对比度达标 */
+    --shadow-card: 0 16px 44px rgba(255, 158, 181, .20);
+    --shadow-btn: 0 8px 20px rgba(255, 158, 181, .40);
+    --radius-card: 24px;
+    --radius-pill: 999px;
+
+    --font-display: 'TangYuanTi', '糖圆体', 'PingFang SC', 'Microsoft YaHei', sans-serif;
+    --theme-color: #fff6f1;
+}
+
+/* ===== ⬜ 燕麦拿铁（simple，安静简约档）===== */
+[data-theme="simple"] {
+    --bg: #faf9f6;                 /* 暖白，不纯 */
+    --surface: #ffffff;
+    --text: #2b2f36;               /* 暖石墨 */
+    --text-secondary: #6b7280;
+    --text-tertiary: #9aa0a8;
+    --border: #e8e6e1;
+    --primary: #c07b54;            /* 陶土灰橘，与另两主题有血缘 */
+    --primary-deep: #a5663f;
+    --primary-tint: #f7ede6;
+    --grad-primary: linear-gradient(135deg, #c07b54, #a5663f);
+    --on-primary: #ffffff;
+    --shadow-card: 0 8px 24px rgba(43, 47, 54, .08);
+    --shadow-btn: 0 6px 14px rgba(43, 47, 54, .18);
+    --radius-card: 12px;
+    --radius-pill: 12px;           /* 方一点但保持友好 */
+
+    --theme-color: #faf9f6;
+}
