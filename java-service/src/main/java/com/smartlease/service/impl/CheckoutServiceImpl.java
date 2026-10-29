@@ -518,10 +518,10 @@ public class CheckoutServiceImpl implements CheckoutService {
 
     private void validateMoveOutDate(LocalDate moveOutDate, Lease lease) {
 
-        if (moveOutDate.isBefore(lease.getStartDate())) {
+        if (moveOutDate.isBefore(LocalDate.now())) {
             throw BusinessException.badRequest(
                     ErrorCode.CHECKOUT_MOVE_OUT_DATE_INVALID,
-                    "moveOutDate must be on or after lease.startDate"
+                    "moveOutDate must not be in the past"
             );
         }
 
