@@ -357,6 +357,7 @@ def chat(req: ChatRequest, authorization: Optional[str] = Header(default=None)):
 
                 "scene": scene,
                 "last_route": session_last_route,
+                "resume_hint": False,
                 "persona": req.persona,
                 "progress": progress,
             })

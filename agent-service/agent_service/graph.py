@@ -39,6 +39,7 @@ class AgentState(TypedDict):
 
     scene: Optional[str]
     last_route: Optional[str]
+    resume_hint: bool
     persona: Optional[str]
     progress: Optional[Any]
     ticket: Optional[dict[str, Any]]
@@ -360,6 +361,10 @@ def understand_node(state: AgentState) -> dict[str, Any]:
     _emit_progress(state, "understanding")
     message = state["message"].strip()
     active_case = _load_active_case(state.get("token"))
+    pending_case = (
+        active_case is not None
+        and str(active_case.get("status", "")).upper() in ("APPLYING", "AWAITING_CONFIRM")
+    )
     scene_checkout = (state.get("scene") or "").upper() == "CHECKOUT"
 
     if parse_query_command(message):
@@ -376,7 +381,7 @@ def understand_node(state: AgentState) -> dict[str, Any]:
         }
     # 报修政策/价格咨询：不进 identity，不需要登录
     if is_repair_consult(message):
-        return {"route": "repair_consult"}
+        return {"route": "repair_consult", "resume_hint": pending_case}
     # 报修政策/价格咨询：不进 identity，不需要登录
     # 通用条款咨询兜底（两个入口共用）：能不能/怎么/规定/禁止类 → 知识问答
     if is_policy_consult(message):
@@ -387,7 +392,7 @@ def understand_node(state: AgentState) -> dict[str, Any]:
     strong_repair = any(w in message for w in REPAIR_STRONG_WORDS) and not has_checkout_context(message)
     explicit_checkout_signal = any(w in message for w in EXPLICIT_CHECKOUT_WORDS)
     if active_case is None and not has_checkout_context(message) and not explicit_checkout_signal and _is_greeting(message):
-        return {"route": "greeting"}
+        return {"route": "greeting", "resume_hint": pending_case}
 
     checkout_allowed = (
             active_case is not None
@@ -459,7 +464,7 @@ def understand_node(state: AgentState) -> dict[str, Any]:
         if scene_checkout or has_checkout_context(message):
             return {"route": "checkout_consult"}
         return {"route": "repair_consult"}
-    return {"route": "chat"}
+    return {"route": "chat", "resume_hint": pending_case}
 
 
 def route_after_understand(state: AgentState) -> str:
@@ -467,12 +472,13 @@ def route_after_understand(state: AgentState) -> str:
 
 
 def chat_node(state: AgentState) -> dict[str, Any]:
-    return {
-        "answer": chat_once(
-            state["message"],
-            history_text=state.get("history_text"),
-        )
-    }
+    answer = chat_once(
+        state["message"],
+        history_text=state.get("history_text"),
+    )
+    if state.get("resume_hint"):
+        answer += "\n\n偷偷提醒一下你，您的退租流程还在进行中，你刚刚提到的呢，要接着办吗？"
+    return {"answer": answer}
 
 
 def clarify_node(state: AgentState) -> dict[str, Any]:
@@ -794,6 +800,8 @@ def repair_consult_node(state: AgentState) -> dict[str, Any]:
     if any(w in message for w in REPAIR_STRONG_WORDS):
         answer += "\n如果你是要报修，请告诉我具体位置和问题，例如：厨房水龙头漏水。"
 
+    if state.get("resume_hint"):
+        answer += "\n\n偷偷提醒一下你，您的退租流程还在进行中，要接着办吗？"
     return {"answer": answer}
 # ============================ 出口 ============================
 
@@ -816,7 +824,10 @@ def answer_node(state: AgentState) -> dict[str, Any]:
     return {"answer": state["answer"]}
 
 def greeting_node(state: AgentState) -> dict[str, Any]:
-    return {"answer": INTRO_TEXT}
+    answer = INTRO_TEXT
+    if state.get("resume_hint"):
+        answer += "\n\n偷偷提醒一下你，您的退租流程还在进行中，要接着办吗？"
+    return {"answer": answer}
 
 def persona_node(state: AgentState) -> dict[str, Any]:
     """风格层：有 persona 走流式润色（逐 token 推队列），失败或无 persona 原样返回。"""
