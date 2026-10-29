@@ -4,7 +4,7 @@ from .llm import rewrite_query
 import datetime
 from langgraph.graph import END, START, StateGraph
 from .rag.repair_rag import retrieve_repair_clauses
-from .llm import chat_once, extract_checkout_slots, extract_slots, polish_answer
+from .llm import chat_once, extract_checkout_slots, extract_slots, get_repair_tips, polish_answer
 from .tools.checkout_rag import retrieve_checkout_clauses, retrieve_first_checkout_clause
 from .tools.checkout_tools import (
     checkout_add_damage,
@@ -254,6 +254,8 @@ def _load_active_case(token: Optional[str]) -> Optional[dict[str, Any]]:
 
 
 def _map_java_error(exc: JavaServiceError) -> str:
+    if exc.code == "A02010":
+        return "俺不是笨笨ai哦，搬离日不能是过去的日期呢，请重新告诉我您打算哪天搬离。"
     if exc.http_status == 401:
         return "登录已失效，请重新登录。"
     if exc.http_status == 404:
@@ -828,9 +830,13 @@ def answer_node(state: AgentState) -> dict[str, Any]:
     if state.get("ticket"):
         ticket = state["ticket"]
         status_cn = TICKET_STATUS_CN.get(str(ticket.get("status", "")).upper(), "已登记")
-        return {
-            "answer": f"已创建报修工单：编号 {ticket.get('id')}，当前状态：{status_cn}。"
-        }
+        answer = f"已创建报修工单：编号 {ticket.get('id')}，当前状态：{status_cn}。"
+        tips = get_repair_tips(state.get("description") or "")
+        if tips:
+            answer += f"\n\n💡 小建议：{tips}"
+        else:
+            answer += "\n\n💡 小建议：维修人员到达前，可先拍照记录问题位置，保持现场原状便于排查。"
+        return {"answer": answer}
 
     if state.get("tickets") is not None:
         tickets = state["tickets"]

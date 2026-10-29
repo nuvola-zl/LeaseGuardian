@@ -356,3 +356,22 @@ def rewrite_query(user_message: str) -> str:
         return (resp.choices[0].message.content or "").strip() or user_message
     except Exception:
         return user_message
+
+def get_repair_tips(description: str) -> Optional[str]:
+    """基于报修描述给自救小建议，按轻重分两档；失败返回 None，调用方用兜底文案。"""
+    prompt = (
+        "你是租务维修顾问。根据下面的报修描述，给用户简短的自救建议，按轻重分两档：\n"
+        "1）情况严重（大量漏水/漏电/燃气等紧急情况）：先给立即止损动作（关总阀/断电/离开现场/下楼找管理员）；\n"
+        "2）情况轻微：给临时缓解办法（用桶接水/拍照留证/暂停使用）。\n"
+        "只输出建议本身，分两档写，不要客套话。\n\n"
+        f"报修描述：{description}"
+    )
+    try:
+        resp = _client.chat.completions.create(
+            model=settings.openai_model_persona,
+            messages=[{"role": "user", "content": prompt}],
+            temperature=0.3,
+        )
+        return (resp.choices[0].message.content or "").strip() or None
+    except Exception:
+        return None
