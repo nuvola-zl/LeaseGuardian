@@ -40,6 +40,7 @@ class AgentState(TypedDict):
     scene: Optional[str]
     last_route: Optional[str]
     resume_hint: bool
+    last_assistant: Optional[str]
     persona: Optional[str]
     progress: Optional[Any]
     ticket: Optional[dict[str, Any]]
@@ -574,6 +575,7 @@ def route_after_checkout_context(state: AgentState) -> str:
 
 def checkout_router_node(state: AgentState) -> dict[str, Any]:
     case = state.get("termination_case")
+    message = state.get("message") or ""
     intent = state.get("checkout_intent")
     lease = state.get("active_lease") or {}
 
@@ -609,8 +611,14 @@ def checkout_router_node(state: AgentState) -> dict[str, Any]:
         return {"checkout_next": "damage"}
 
     # AWAITING_CONFIRM
+    # AWAITING_CONFIRM：资金动作。"确认"要算数，前提是用户说出了明词，或 AI 上一句刚问过确认/刚展示过结算
     if state.get("confirm_signal") or intent == "checkout_confirm":
-        return {"checkout_next": "confirm"}
+        last_assistant = state.get("last_assistant") or ""
+        asked = ("确认" in last_assistant) or ("确定" in last_assistant)
+        said = any(t in message for t in ("确认", "确定", "就这样", "没问题"))
+        if said or asked:
+            return {"checkout_next": "confirm"}
+        return {"checkout_next": "answer", "answer": "结算明细已出，您确认退租吗？确认前可以免费取消。"}
     if intent == "damage_report" or state.get("damage_items"):
         return {"checkout_next": "damage"}
     if intent == "checkout_consult" or state.get("side_question"):

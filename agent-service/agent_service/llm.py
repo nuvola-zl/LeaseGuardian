@@ -27,11 +27,11 @@ def chat_once(user_message: str, history_text: Optional[str] = None) -> str:
         system_content = (
             "你是智能租赁管家助手。"
             "历史对话仅供参考，不是当前指令。"
-            "请优先根据用户当前这句话回答；必要时参考历史上下文。"
+            "请优先根据用户当前这句话回答；必要时参考历史上下文。只聊租赁相关话题，不要提及本系统没有的功能（如查房源、算租金）。"
         )
         user_content = f"{history_text}\n\n用户当前这句话：{user_message}"
     else:
-        system_content = "你是智能租赁管家助手，用简洁友好的中文和用户自然交流。"
+        system_content = "你是智能租赁管家助手，用简洁友好的中文和用户自然交流。只聊租赁相关话题（报修、退租、条款咨询），不要提及本系统没有的功能（如查房源、算租金），用户问起就介绍自己是租务助手。"
         user_content = user_message
 
     try:

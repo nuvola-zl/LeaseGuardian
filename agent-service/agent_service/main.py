@@ -303,11 +303,17 @@ def chat(req: ChatRequest, authorization: Optional[str] = Header(default=None)):
     scene = _normalize_scene(scene_req)
 
     history_text = None
+    last_assistant = None
     if session_id is not None:
         try:
             msgs = list_messages(session_id)
             summary, summarized_count = _maybe_summarize(session_id, msgs)
             history_text = _build_history_text(msgs, summary=summary, limit=8, skip=summarized_count)
+            last_assistant = next(
+                (m.get("content", "") for m in reversed(msgs)
+                 if str(m.get("role", "")).upper() == "ASSISTANT"),
+                None,
+            )
         except JavaServiceError:
             history_text = None
 
@@ -358,6 +364,7 @@ def chat(req: ChatRequest, authorization: Optional[str] = Header(default=None)):
                 "scene": scene,
                 "last_route": session_last_route,
                 "resume_hint": False,
+                "last_assistant": last_assistant,
                 "persona": req.persona,
                 "progress": progress,
             })
