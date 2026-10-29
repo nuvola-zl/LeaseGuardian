@@ -70,9 +70,11 @@ def extract_slots(user_message: str) -> Optional[dict[str, Any]]:
 你是 LeaseGuardian 报修助手的信息抽取器。只输出 JSON，不要输出任何解释、Markdown 或代码块。
 
 字段规则：
-- intent: 只能是 "repair" / "query" / "chat"
+- intent: 只能是 "repair" / "query" / "consult" / "chat"
 - 如果用户要报修/登记维修，intent="repair"
 - 如果用户要查询工单，intent="query"
+- 如果用户在咨询租务相关的规则、责任、价格、费用、流程等知识性问题
+  （例如"楼道堆杂物怎么说""维修费谁出""违约金怎么算""养宠物有啥说法"），intent="consult"
 - 如果只是聊天或无法判断，intent="chat"
 - tenant_id: 从用户话里抽取租客ID；没有就 null
 - description: 报修问题描述；没有就 null
@@ -101,7 +103,7 @@ def extract_slots(user_message: str) -> Optional[dict[str, Any]]:
             return None
 
         intent = data.get("intent")
-        if intent not in ("repair", "query", "chat"):
+        if intent not in ("repair", "query", "consult", "chat"):
             return None
 
         tenant_id = data.get("tenant_id")

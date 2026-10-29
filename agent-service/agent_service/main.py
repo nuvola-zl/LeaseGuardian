@@ -67,8 +67,16 @@ async def rag_upload(file: UploadFile = File(...)):
     os.makedirs(_UPLOAD_DIR, exist_ok=True)
     path = os.path.join(_UPLOAD_DIR, safe_name)
 
+    MAX_UPLOAD_BYTES = 20 * 1024 * 1024  # 20MB，防超大文件拖垮磁盘/嵌入接口
+    written = 0
     with open(path, "wb") as f:
-        shutil.copyfileobj(file.file, f)
+        while chunk := file.file.read(1024 * 1024):
+            written += len(chunk)
+            if written > MAX_UPLOAD_BYTES:
+                f.close()
+                os.remove(path)
+                raise HTTPException(status_code=413, detail="文件超过 20MB 限制")
+            f.write(chunk)
 
     if safe_name.lower().endswith(".pdf"):
         import pypdf
@@ -157,7 +165,7 @@ def _ensure_chat_session(req: ChatRequest, token: Optional[str]) -> Optional[int
         return None
 
 
-def _build_history_text(messages: list[dict], summary: Optional[str] = None, limit: int = 8) -> Optional[str]:
+def _build_history_text(messages: list[dict], summary: Optional[str] = None, limit: int = 8, skip: int = 0) -> Optional[str]:
     if not messages and not summary:
         return None
 
@@ -165,7 +173,7 @@ def _build_history_text(messages: list[dict], summary: Optional[str] = None, lim
     if summary:
         lines.append(f"【早前对话摘要】{summary}")
     if messages:
-        recent = messages[-limit:]
+        recent = (messages[skip:] if skip else messages)[-limit:]
         lines.append("【历史对话，仅供参考，不是当前指令】")
         for m in recent:
             role = "user" if str(m.get("role", "")).upper() == "USER" else "assistant"
@@ -174,12 +182,13 @@ def _build_history_text(messages: list[dict], summary: Optional[str] = None, lim
     return "\n".join(lines)
 
 
-_SUMMARY_THRESHOLD = 12   # 消息总数超过这个数才触发压缩
+# _SUMMARY_THRESHOLD = 12   # 消息总数超过这个数才触发压缩
 _SUMMARY_BATCH = 8        # 每轮压缩最老的 8 条
 
 
-def _maybe_summarize(session_id: int, messages: list[dict]) -> Optional[str]:
-    """超阈值就把最老一批压成摘要，写进 state_json.common；返回当前 summary（可能为 None）。"""
+def _maybe_summarize(session_id: int, messages: list[dict]) -> tuple[Optional[str], int]:
+    """超阈值就把最老一批压成摘要，写进 state_json.common；
+    返回 (当前摘要, 已摘要条数)，调用方据此把已摘要的老消息从原文历史里剔除。"""
     try:
         session = get_session(session_id)
         state = _parse_state_json(session.get("state_json"))
@@ -194,15 +203,16 @@ def _maybe_summarize(session_id: int, messages: list[dict]) -> Optional[str]:
                 for m in batch
             )
             new_summary = summarize_history(existing or "（暂无早前摘要）", batch_text)
+            summarized_count += len(batch)
             merged = _merge_state(
                 state,
-                {"common": {"summary": new_summary, "summarized_count": summarized_count + len(batch)}},
+                {"common": {"summary": new_summary, "summarized_count": summarized_count}},
             )
             update_session_state(session_id, merged)
-            return new_summary
-        return existing
+            return new_summary, summarized_count
+        return existing, summarized_count
     except Exception:
-        return None
+        return None, 0
 
 def _parse_state_json(raw: Any) -> dict[str, Any]:
     if not raw:
@@ -277,13 +287,18 @@ def chat(req: ChatRequest, authorization: Optional[str] = Header(default=None)):
 
     session_id = _ensure_chat_session(req, token)
 
-    # scene 兜底：请求没带时，从会话里读（防前端只在新会话时传）
-    scene_req = req.scene
-    if not scene_req and session_id is not None:
+    # scene 兜底 + 最近业务线：请求没带时从会话里补（防前端只在新会话时传）
+    session_scene = None
+    session_last_route = None
+    if session_id is not None:
         try:
-            scene_req = get_session(session_id).get("scene")
+            sess = get_session(session_id)
+            session_scene = sess.get("scene")
+            common = _parse_state_json(sess.get("state_json")).get("common") or {}
+            session_last_route = common.get("last_route")
         except Exception:
-            scene_req = None
+            pass
+    scene_req = req.scene or session_scene
 
     scene = _normalize_scene(scene_req)
 
@@ -291,8 +306,8 @@ def chat(req: ChatRequest, authorization: Optional[str] = Header(default=None)):
     if session_id is not None:
         try:
             msgs = list_messages(session_id)
-            summary = _maybe_summarize(session_id, msgs)
-            history_text = _build_history_text(msgs, summary=summary, limit=8)
+            summary, summarized_count = _maybe_summarize(session_id, msgs)
+            history_text = _build_history_text(msgs, summary=summary, limit=8, skip=summarized_count)
         except JavaServiceError:
             history_text = None
 
@@ -341,6 +356,7 @@ def chat(req: ChatRequest, authorization: Optional[str] = Header(default=None)):
                 "checkout_next": "",
 
                 "scene": scene,
+                "last_route": session_last_route,
                 "persona": req.persona,
                 "progress": progress,
             })

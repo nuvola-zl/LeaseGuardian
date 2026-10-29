@@ -38,6 +38,7 @@ class AgentState(TypedDict):
     request_id: Optional[str]
 
     scene: Optional[str]
+    last_route: Optional[str]
     persona: Optional[str]
     progress: Optional[Any]
     ticket: Optional[dict[str, Any]]
@@ -393,6 +394,7 @@ def understand_node(state: AgentState) -> dict[str, Any]:
             or has_checkout_context(message)
             or explicit_checkout_signal
             or scene_checkout
+            or state.get("last_route") == "CHECKOUT"
     )
 
     # 第一层：LLM 抽取
@@ -417,6 +419,7 @@ def understand_node(state: AgentState) -> dict[str, Any]:
             active_case is not None
             or explicit_checkout_signal
             or scene_checkout
+            or state.get("last_route") == "CHECKOUT"
     ):
         base = {
             "route": "checkout",
@@ -449,6 +452,10 @@ def understand_node(state: AgentState) -> dict[str, Any]:
         }
     if slots and slots.get("intent") == "query":
         return {"route": "query"}
+    if slots and slots.get("intent") == "consult":
+        if scene_checkout or has_checkout_context(message):
+            return {"route": "checkout_consult"}
+        return {"route": "repair_consult"}
     return {"route": "chat"}
 
 
