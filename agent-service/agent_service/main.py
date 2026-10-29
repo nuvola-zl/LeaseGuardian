@@ -340,7 +340,7 @@ def chat(req: ChatRequest, authorization: Optional[str] = Header(default=None)):
                 "checkout_error": None,
                 "checkout_next": "",
 
-                "scene": req.scene,
+                "scene": scene,
                 "persona": req.persona,
                 "progress": progress,
             })
