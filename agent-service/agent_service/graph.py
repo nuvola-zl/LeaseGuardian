@@ -222,8 +222,20 @@ def _current_user_id(state: AgentState) -> int:
 def _extract_active_lease(user_context: Optional[dict[str, Any]]) -> Optional[dict[str, Any]]:
     if not user_context:
         return None
+    # /auth/me 返回扁平结构：租约字段直接在顶层（status/monthly_rent/...），
+    # 历史代码按嵌套 lease 找永远落空；这里兼容两种形态。
     lease = user_context.get("lease") or user_context.get("active_lease")
-    return lease if isinstance(lease, dict) else None
+    if isinstance(lease, dict):
+        return lease
+    if user_context.get("status") is not None:
+        return {
+            "status": user_context.get("status"),
+            "monthly_rent": user_context.get("monthly_rent"),
+            "deposit": user_context.get("deposit"),
+            "start_date": user_context.get("start_date"),
+            "end_date": user_context.get("end_date"),
+        }
+    return None
 
 
 def _load_active_case(token: Optional[str]) -> Optional[dict[str, Any]]:
