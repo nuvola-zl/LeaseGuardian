@@ -78,10 +78,13 @@ def extract_slots(user_message: str) -> Optional[dict[str, Any]]:
 - 如果只是聊天或无法判断，intent="chat"
 - tenant_id: 从用户话里抽取租客ID；没有就 null
 - description: 报修问题描述；没有就 null
+- description_complete: 仅 intent="repair" 时填写——描述是否已足够完整
+  （说清了什么东西坏了、足以让维修人员直接上门处理就 true；明显缺少关键信息就 false）。
+  其他 intent 填 null
 - request_id: 幂等请求号；用户没给就 null
 
 必须输出 JSON，示例：
-{"intent":"repair","tenant_id":"t201","description":"厨房灯泡坏了","request_id":null}
+{"intent":"repair","tenant_id":"t201","description":"厨房灯泡坏了","description_complete":true,"request_id":null}
 """
 
     try:
@@ -107,6 +110,7 @@ def extract_slots(user_message: str) -> Optional[dict[str, Any]]:
             return None
 
         tenant_id = data.get("tenant_id")
+        desc_complete = data.get("description_complete")
         description = data.get("description")
         request_id = data.get("request_id")
 
@@ -115,6 +119,7 @@ def extract_slots(user_message: str) -> Optional[dict[str, Any]]:
             "tenant_id": tenant_id if isinstance(tenant_id, str) and tenant_id.strip() else None,
             "description": description if isinstance(description, str) and description.strip() else None,
             "request_id": request_id if isinstance(request_id, str) and request_id.strip() else None,
+            "description_complete": desc_complete if isinstance(desc_complete, bool) else None,
         }
     except Exception:
         return None

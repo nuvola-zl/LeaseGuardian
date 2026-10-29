@@ -443,7 +443,10 @@ def understand_node(state: AgentState) -> dict[str, Any]:
     slots = extract_slots(message)
     if slots and slots.get("intent") == "repair":
         description = slots.get("description")
-        if needs_clarify(description):
+        complete = slots.get("description_complete")
+        if complete is None:
+            complete = not needs_clarify(description)   # LLM 没给判断 → 关键词备胎顶上
+        if not complete:
             return {"route": "clarify"}
         return {
             "route": "repair",
