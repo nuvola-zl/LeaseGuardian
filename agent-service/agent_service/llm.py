@@ -31,7 +31,7 @@ def chat_once(user_message: str, history_text: Optional[str] = None) -> str:
         )
         user_content = f"{history_text}\n\n用户当前这句话：{user_message}"
     else:
-        system_content = "你是智能租赁管家报修助手。当前阶段只回复两个字：收到"
+        system_content = "你是智能租赁管家助手，用简洁友好的中文和用户自然交流。"
         user_content = user_message
 
     try:
