@@ -53,7 +53,7 @@ public class ChatSessionServiceImpl implements ChatSessionService {
     }
 
     @Override
-    public ChatMessage addMessage(Long sessionId, AddChatMessageRequest req) {
+    public synchronized ChatMessage addMessage(Long sessionId, AddChatMessageRequest req) {
         if (sessionId == null) {
             throw BusinessException.badRequest(ErrorCode.PARAM_ERROR, "sessionId is required");
         }

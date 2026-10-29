@@ -23,6 +23,7 @@ import com.smartlease.mapper.DamageItemMapper;
 import com.smartlease.mapper.LeaseMapper;
 import com.smartlease.service.CheckoutService;
 import lombok.RequiredArgsConstructor;
+import org.springframework.dao.DuplicateKeyException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
@@ -86,7 +87,17 @@ public class CheckoutServiceImpl implements CheckoutService {
         c.setVersion(0);
         c.setCreatedAt(now);
         c.setUpdatedAt(now);
-        checkoutCaseMapper.insert(c);
+        try {
+            checkoutCaseMapper.insert(c);
+        } catch (DuplicateKeyException dup) {
+            // 并发下同 requestId 双双穿透预检：唯一索引兜底，转成幂等返回已有单
+            CheckoutCase existed = checkoutCaseMapper.selectOne(
+                    Wrappers.<CheckoutCase>lambdaQuery().eq(CheckoutCase::getRequestId, requestId));
+            if (existed != null && existed.getTenantId().equals(tenantId)) {
+                return existed;
+            }
+            throw BusinessException.conflict(ErrorCode.RESOURCE_DUPLICATE, "requestId belongs to another tenant");
+        }
 
         int rows = leaseMapper.update(null, Wrappers.<Lease>lambdaUpdate()
                 .eq(Lease::getId, lease.getId())
@@ -166,7 +177,21 @@ public class CheckoutServiceImpl implements CheckoutService {
             item.setFinalAmount(null);
         }
 
-        damageItemMapper.insert(item);
+        try {
+            damageItemMapper.insert(item);
+        } catch (DuplicateKeyException dup) {
+            // 仅 requestId 非空才可能撞唯一索引；并发穿透预检时幂等返回
+            if (item.getRequestId() != null) {
+                DamageItem existed = damageItemMapper.selectOne(
+                        Wrappers.<DamageItem>lambdaQuery().eq(DamageItem::getRequestId, item.getRequestId()));
+                if (existed != null
+                        && existed.getTenantId().equals(tenantId)
+                        && existed.getCaseId().equals(c.getId())) {
+                    return existed;
+                }
+            }
+            throw BusinessException.conflict(ErrorCode.RESOURCE_DUPLICATE, "requestId belongs to another damage item");
+        }
         refreshPendingDamageFlag(c.getId());
         return damageItemMapper.selectById(item.getId());
     }
@@ -492,6 +517,14 @@ public class CheckoutServiceImpl implements CheckoutService {
     }
 
     private void validateMoveOutDate(LocalDate moveOutDate, Lease lease) {
+
+        if (moveOutDate.isBefore(lease.getStartDate())) {
+            throw BusinessException.badRequest(
+                    ErrorCode.CHECKOUT_MOVE_OUT_DATE_INVALID,
+                    "moveOutDate must be on or after lease.startDate"
+            );
+        }
+
         if (moveOutDate.isAfter(lease.getEndDate())) {
             throw BusinessException.badRequest(
                     ErrorCode.CHECKOUT_MOVE_OUT_DATE_INVALID,
