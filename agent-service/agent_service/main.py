@@ -262,8 +262,11 @@ def _update_repair_session_state(
         if result.get("last_ticket_id"):
             patch["common"] = {"last_route": "REPAIR"}
             patch["repair"] = {
-                "last_ticket_id": int(result["last_ticket_id"])
+                "last_ticket_id": int(result["last_ticket_id"]),
+                "pending_message": None,   # 报修成功了，销账
             }
+        elif result.get("pending_repair"):
+            patch["repair"] = {"pending_message": result["pending_repair"]}
         elif result.get("termination_case") or result.get("checkout_detail"):
             patch["common"] = {"last_route": "CHECKOUT"}
         elif scene:
@@ -290,12 +293,15 @@ def chat(req: ChatRequest, authorization: Optional[str] = Header(default=None)):
     # scene 兜底 + 最近业务线：请求没带时从会话里补（防前端只在新会话时传）
     session_scene = None
     session_last_route = None
+    session_pending_repair = None
     if session_id is not None:
         try:
             sess = get_session(session_id)
             session_scene = sess.get("scene")
-            common = _parse_state_json(sess.get("state_json")).get("common") or {}
+            state_json = _parse_state_json(sess.get("state_json"))
+            common = state_json.get("common") or {}
             session_last_route = common.get("last_route")
+            session_pending_repair = (state_json.get("repair") or {}).get("pending_message")
         except Exception:
             pass
     scene_req = req.scene or session_scene
@@ -365,6 +371,7 @@ def chat(req: ChatRequest, authorization: Optional[str] = Header(default=None)):
                 "last_route": session_last_route,
                 "resume_hint": False,
                 "last_assistant": last_assistant,
+                "pending_repair": session_pending_repair,
                 "persona": req.persona,
                 "progress": progress,
             })

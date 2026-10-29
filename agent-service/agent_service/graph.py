@@ -33,6 +33,7 @@ class AgentState(TypedDict):
     identity_error: Optional[str]
     history_text: Optional[str]
     last_ticket_id: Optional[int]
+    pending_repair: Optional[str]
 
     description: Optional[str]
     request_id: Optional[str]
@@ -374,7 +375,7 @@ def understand_node(state: AgentState) -> dict[str, Any]:
     rule_repair = parse_repair_command(message)
     if rule_repair:
         if needs_clarify(rule_repair["description"]):
-            return {"route": "clarify"}
+            return {"route": "clarify", "pending_repair": message}
         return {
             "route": "repair",
             "description": rule_repair["description"],
@@ -453,7 +454,7 @@ def understand_node(state: AgentState) -> dict[str, Any]:
         if complete is None:
             complete = not needs_clarify(description)   # LLM 没给判断 → 关键词备胎顶上
         if not complete:
-            return {"route": "clarify"}
+            return {"route": "clarify", "pending_repair": message}
         return {
             "route": "repair",
             "description": description.strip(),
@@ -478,7 +479,12 @@ def chat_node(state: AgentState) -> dict[str, Any]:
         history_text=state.get("history_text"),
     )
     if state.get("resume_hint"):
-        answer += "\n\n偷偷提醒一下你，您的退租流程还在进行中，你刚刚提到的呢，要接着办吗？"
+        answer += "\n\n偷偷问一下，您的退租流程还在进行中，要接着办吗？"
+    if not state.get("resume_hint"):
+        pending = state.get("pending_repair")
+        if pending and "想报修" not in (state.get("last_assistant") or ""):
+            snippet = pending[:20] + ("…" if len(pending) > 20 else "")
+            answer += f"\n\n那个俺想问一下，您刚才好像想报修（说的是“{snippet}”），还没说清楚具体问题呢，要继续吗？"
     return {"answer": answer}
 
 
@@ -614,7 +620,7 @@ def checkout_router_node(state: AgentState) -> dict[str, Any]:
     # AWAITING_CONFIRM：资金动作。"确认"要算数，前提是用户说出了明词，或 AI 上一句刚问过确认/刚展示过结算
     if state.get("confirm_signal") or intent == "checkout_confirm":
         last_assistant = state.get("last_assistant") or ""
-        asked = ("确认" in last_assistant) or ("确定" in last_assistant)
+        asked = any(t in last_assistant for t in ("确认退租", "您确认", "确认吗", "确定退租"))
         said = any(t in message for t in ("确认", "确定", "就这样", "没问题"))
         if said or asked:
             return {"checkout_next": "confirm"}
@@ -809,7 +815,12 @@ def repair_consult_node(state: AgentState) -> dict[str, Any]:
         answer += "\n如果你是要报修，请告诉我具体位置和问题，例如：厨房水龙头漏水。"
 
     if state.get("resume_hint"):
-        answer += "\n\n偷偷提醒一下你，您的退租流程还在进行中，要接着办吗？"
+        answer += "\n\n偷偷提醒你一下，您的退租流程还在进行中，要接着办吗？"
+    if not state.get("resume_hint"):
+        pending = state.get("pending_repair")
+        if pending and "想报修" not in (state.get("last_assistant") or ""):
+            snippet = pending[:20] + ("…" if len(pending) > 20 else "")
+            answer += f"\n\n那个俺想问一下，您刚才好像想报修（说的是“{snippet}”），还没说清楚具体问题呢，要继续吗？"
     return {"answer": answer}
 # ============================ 出口 ============================
 
@@ -834,7 +845,12 @@ def answer_node(state: AgentState) -> dict[str, Any]:
 def greeting_node(state: AgentState) -> dict[str, Any]:
     answer = INTRO_TEXT
     if state.get("resume_hint"):
-        answer += "\n\n偷偷提醒一下你，您的退租流程还在进行中，要接着办吗？"
+        answer += "\n\n偷偷提醒你一下，您的退租流程还在进行中，要接着办吗？"
+    if not state.get("resume_hint"):
+        pending = state.get("pending_repair")
+        if pending and "想报修" not in (state.get("last_assistant") or ""):
+            snippet = pending[:20] + ("…" if len(pending) > 20 else "")
+            answer += f"\n\n那个俺想问一下，您刚才好像想报修（说的是“{snippet}”），还没说清楚具体问题呢，要继续吗？"
     return {"answer": answer}
 
 def persona_node(state: AgentState) -> dict[str, Any]:
