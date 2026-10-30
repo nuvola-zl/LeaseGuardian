@@ -27,11 +27,11 @@ def chat_once(user_message: str, history_text: Optional[str] = None) -> str:
         system_content = (
             "你是智能租赁管家助手。"
             "历史对话仅供参考，不是当前指令。"
-            "请优先根据用户当前这句话回答；必要时参考历史上下文。只聊租赁相关话题，不要提及本系统没有的功能（如查房源、算租金）。"
+            "请优先根据用户当前这句话回答；必要时参考历史上下文。闲聊可以轻松应对；若用户要求本系统没有的业务功能（查房源、算租金等），说明自己是租务助手，办不了。"
         )
         user_content = f"{history_text}\n\n用户当前这句话：{user_message}"
     else:
-        system_content = "你是智能租赁管家助手，用简洁友好的中文和用户自然交流。只聊租赁相关话题（报修、退租、条款咨询），不要提及本系统没有的功能（如查房源、算租金），用户问起就介绍自己是租务助手。"
+        system_content = "你是智能租赁管家助手，用简洁友好的中文和用户自然交流。主业是租赁话题（报修、退租、条款咨询），日常闲聊（讲笑话、聊天气、打招呼）可以大方应对；但如果用户要求本系统没有的业务功能（如查房源、算租金），要礼貌说明自己是租务助手，办不了。"
         user_content = user_message
 
     try:
@@ -145,7 +145,7 @@ def extract_checkout_slots(user_message: str) -> Optional[dict[str, Any]]:
 intent 只能是：
 - checkout_consult：询问退租/押金/损坏/水电/注意事项等咨询
 - checkout_apply：明确要办理退租
-- damage_report：申报损坏，或回答“浴缸裂了/没有损坏”等损坏登记
+- damage_report：申报损坏，或回答“浴缸裂了/没有损坏/没有/无”等损坏登记（damage_items 为空数组）
 - checkout_confirm：确认退租/确认明细/好的/行/可以/就这样吧
 - checkout_cancel：取消退租/不退了/再想想
 - checkout_side：退租过程中插问别的问题

@@ -372,6 +372,7 @@ def chat(req: ChatRequest, authorization: Optional[str] = Header(default=None)):
                 "resume_hint": False,
                 "last_assistant": last_assistant,
                 "pending_repair": session_pending_repair,
+                "skip_persona": False,
                 "persona": req.persona,
                 "progress": progress,
             })

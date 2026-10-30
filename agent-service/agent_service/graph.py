@@ -41,6 +41,7 @@ class AgentState(TypedDict):
     scene: Optional[str]
     last_route: Optional[str]
     resume_hint: bool
+    skip_persona: bool
     last_assistant: Optional[str]
     persona: Optional[str]
     progress: Optional[Any]
@@ -147,6 +148,7 @@ INTRO_TEXT = (
     "我是寓见，你的智能租务管家～水管漏了帮你报修，要搬家帮你办退租，"
     "押金结算算得明明白白。今天想办点什么？"
 )
+DISTRESS_WORDS = ("自杀", "想死", "轻生", "不想活", "活不下去", "伤害自己", "自残", "解脱")
 
 def _is_greeting(message: str) -> bool:
     return len(message) <= 12 and any(w in message.lower() for w in GREETING_WORDS)
@@ -320,6 +322,7 @@ def _format_settlement_detail(detail: dict[str, Any]) -> str:
         lines.append("注意：有损坏项待人工核定，暂时不能确认退租。")
     else:
         lines.append("确认后 1-3 个工作日到账（演示数据）；确认前可免费取消。")
+        lines.append("您确认退租吗？")
 
     return "\n".join(lines)
 
@@ -364,6 +367,8 @@ def is_repair_consult(message: str) -> bool:
 def understand_node(state: AgentState) -> dict[str, Any]:
     _emit_progress(state, "understanding")
     message = state["message"].strip()
+    if any(w in message for w in DISTRESS_WORDS):
+        return {"route": "support"}
     active_case = _load_active_case(state.get("token"))
     pending_case = (
         active_case is not None
@@ -446,7 +451,7 @@ def understand_node(state: AgentState) -> dict[str, Any]:
         date_str = _extract_date(message)
         if date_str:
             return {**base, "checkout_intent": "checkout_apply", "move_out_date": date_str}
-        return base
+        # return base
 
     # 第三层：报修/查询/闲聊
     slots = extract_slots(message)
@@ -524,6 +529,18 @@ def route_after_identity(state: AgentState) -> str:
         return "unauthorized"
     return "error"
 
+def support_node(state: AgentState) -> dict[str, Any]:
+    """敏感词兜底：停下一切业务路由，认真回应，且不过 persona 润色。"""
+    return {
+        "answer": (
+            "我听到你说的话，我也很难受，但更多的是担心你呢，我在这儿呐，你有啥问题可以给我说。\n"
+            "如果你此刻很难受，或有任何想伤害自己的念头，请先照顾好自己，给你一个温暖的抱抱呐：\n"
+            "可以拨打北京心理危机研究与干预中心热线 010-82951332（24 小时），\n"
+            "紧急情况请拨 110 / 120，也可以马上联系身边信任的人陪着你。\n"
+            "我会一直在这里陪着你呢，等你状态好些，我们再聊。"
+        ),
+        "skip_persona": True,
+    }
 
 def auth_node(state: AgentState) -> dict[str, Any]:
     return {"answer": "请先登录后再办理租务；登录后我会自动识别当前用户，不需要你手动提供 tenant_id。"}
@@ -622,7 +639,7 @@ def checkout_router_node(state: AgentState) -> dict[str, Any]:
     # AWAITING_CONFIRM：资金动作。"确认"要算数，前提是用户说出了明词，或 AI 上一句刚问过确认/刚展示过结算
     if state.get("confirm_signal") or intent == "checkout_confirm":
         last_assistant = state.get("last_assistant") or ""
-        asked = any(t in last_assistant for t in ("确认退租", "您确认", "确认吗", "确定退租"))
+        asked = any(t in last_assistant for t in ("确认退租", "确认吗", "确定退租"))
         said = any(t in message for t in ("确认", "确定", "就这样", "没问题"))
         if said or asked:
             return {"checkout_next": "confirm"}
@@ -863,7 +880,7 @@ def persona_node(state: AgentState) -> dict[str, Any]:
     """风格层：有 persona 走流式润色（逐 token 推队列），失败或无 persona 原样返回。"""
     answer = state.get("answer") or ""
     persona = state.get("persona")
-    if not answer or not persona:
+    if not answer or not persona or state.get("skip_persona"):
         return {"answer": answer}
     _emit_progress(state, "polishing")
     return {
@@ -890,6 +907,7 @@ def build_graph():
     graph.add_node("answer_node", answer_node)
     graph.add_node("persona_node", persona_node)
     graph.add_node("greeting_node", greeting_node)
+    graph.add_node("support_node", support_node)
     graph.add_node("repair_consult_node", repair_consult_node)
 
     graph.add_node("checkout_context_node", checkout_context_node)
@@ -914,6 +932,7 @@ def build_graph():
             "checkout": "identity_node",
             "chat": "chat_node",
             "greeting": "greeting_node",
+            "support": "support_node",
         },
     )
 
@@ -961,6 +980,7 @@ def build_graph():
     graph.add_edge("error_node", "answer_node")
     graph.add_edge("chat_node", "answer_node")
     graph.add_edge("greeting_node", "answer_node")
+    graph.add_edge("support_node", "answer_node")
     graph.add_edge("create_ticket_node", "answer_node")
     graph.add_edge("list_tickets_node", "answer_node")
 
