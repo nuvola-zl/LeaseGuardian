@@ -5,15 +5,13 @@ from pathlib import Path
 
 from .core import parse_markdown_to_docs, replace_domain_documents
 
-ROOT = Path(__file__).resolve().parents[3]
-DOCS_DIR = ROOT / "rag" / "docs"
-
+DOCS_DIR = Path(__file__).resolve().parent / "docs"
 
 def ingest_domain(domain: str) -> int:
     if domain == "repair":
-        files = [DOCS_DIR / "repair_policy.md", DOCS_DIR / "price_table.md"]
+        files = [DOCS_DIR / "维修责任条款.md", DOCS_DIR / "维修参考价.md"]
     elif domain == "checkout":
-        files = [DOCS_DIR / "checkout.md"]
+        files = [DOCS_DIR / "退租条款.md"]
     else:
         raise ValueError(f"unknown domain: {domain}")
 
